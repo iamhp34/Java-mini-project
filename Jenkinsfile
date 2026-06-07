@@ -3,16 +3,16 @@ pipeline {
 
     parameters {
         string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Target Source Code Git Branch')
-        string(name: 'GIT_REPO_URL', defaultValue: 'https://github.com/iamhp34/Java-mini-project.git', description: 'Your Personal GitHub Repository URL')
-        string(name: 'APP_DIRECTORY', defaultValue: 'sample-app', description: 'Subfolder containing target Java application source')
+        string(name: 'GIT_REPO_URL', defaultValue: 'https://github.com/iamhp34/Java-mini-project.git', description: 'Your GitHub Repository URL')
+        string(name: 'APP_DIRECTORY', defaultValue: 'sample-app', description: 'Java app source folder')
 
-        string(name: 'NEXUS_IP_PORT', defaultValue: '172.31.7.200:8081', description: 'Nexus Host IP and Port')
+        string(name: 'NEXUS_IP_PORT', defaultValue: '13.233.123.154:30001', description: 'Nexus Host IP and Port without http://')
         string(name: 'NEXUS_REPOSITORY', defaultValue: 'maven-releases', description: 'Nexus hosted repository name')
-        string(name: 'MAVEN_GROUP_ID', defaultValue: 'com/example', description: 'Maven Artifact Group ID path')
+        string(name: 'MAVEN_GROUP_ID', defaultValue: 'com/example', description: 'Maven group path')
 
-        string(name: 'DEPLOY_EC2_IP', defaultValue: '13.234.29.22', description: 'Target staging EC2 IP')
+        string(name: 'DEPLOY_EC2_IP', defaultValue: '13.234.29.22', description: 'Target EC2 IP')
         string(name: 'DEPLOY_EC2_USER', defaultValue: 'ubuntu', description: 'SSH username')
-        string(name: 'APP_DEPLOY_DIR', defaultValue: '/opt/sample-app', description: 'Deployment directory on EC2')
+        string(name: 'APP_DEPLOY_DIR', defaultValue: '/opt/sample-app', description: 'Deployment directory')
     }
 
     tools {
@@ -37,14 +37,14 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 dir("${params.APP_DIRECTORY}") {
-                    echo "Stage 2: Initiating Static Code Analysis..."
+                    echo "Stage 2: Running SonarQube analysis..."
                     withSonarQubeEnv("${env.SONAR_SERVER_ENV}") {
                         sh 'mvn sonar:sonar'
                     }
                 }
 
                 timeout(time: 10, unit: 'MINUTES') {
-                    echo "Evaluating SonarQube Quality Gate rules..."
+                    echo "Checking SonarQube Quality Gate..."
                     waitForQualityGate abortPipeline: true
                 }
             }
@@ -53,7 +53,7 @@ pipeline {
         stage('Build Stage') {
             steps {
                 dir("${params.APP_DIRECTORY}") {
-                    echo "Stage 3: Compiling and packaging application..."
+                    echo "Stage 3: Building WAR file..."
                     sh 'mvn clean package -DskipTests'
                 }
             }
@@ -80,7 +80,9 @@ pipeline {
                         def artifactVersion = "${BUILD_NUMBER}"
 
                         sh """
-                            curl -f -u \$NEXUS_USER:\$NEXUS_PASS --upload-file ${localWarPath} \
+                            curl -f \
+                            -u \$NEXUS_USER:\$NEXUS_PASS \
+                            --upload-file ${localWarPath} \
                             "http://${params.NEXUS_IP_PORT}/repository/${params.NEXUS_REPOSITORY}/${params.MAVEN_GROUP_ID}/${artifactName}/${artifactVersion}/${artifactName}-${artifactVersion}.war"
                         """
                     }
@@ -107,16 +109,19 @@ pipeline {
                             echo "Stage 5: Deploying artifact on EC2: ${params.DEPLOY_EC2_IP}..."
 
                             sh """
-                                ssh -o StrictHostKeyChecking=no ${params.DEPLOY_EC2_USER}@${params.DEPLOY_EC2_IP} "
-                                    echo 'Creating deployment directory...' && \
-                                    sudo mkdir -p ${params.APP_DEPLOY_DIR} && \
-                                    sudo chown -R ${params.DEPLOY_EC2_USER}:${params.DEPLOY_EC2_USER} ${params.APP_DEPLOY_DIR} && \
+                                ssh -o StrictHostKeyChecking=no ${params.DEPLOY_EC2_USER}@${params.DEPLOY_EC2_IP} '
+                                    echo "Connected to target EC2"
+                                    hostname
 
-                                    echo 'Downloading WAR file from Nexus...' && \
-                                    curl -f -u \$NEXUS_USER:\$NEXUS_PASS -o ${params.APP_DEPLOY_DIR}/${artifactName}.war '${nexusDownloadUrl}' && \
+                                    echo "Creating deployment directory..."
+                                    sudo mkdir -p ${params.APP_DEPLOY_DIR}
+                                    sudo chown -R ${params.DEPLOY_EC2_USER}:${params.DEPLOY_EC2_USER} ${params.APP_DEPLOY_DIR}
 
-                                    echo 'Deployment completed successfully.'
-                                "
+                                    echo "Downloading WAR file from Nexus..."
+                                    curl -f -u \$NEXUS_USER:\$NEXUS_PASS -o ${params.APP_DEPLOY_DIR}/${artifactName}.war "${nexusDownloadUrl}"
+
+                                    echo "Deployment completed successfully."
+                                '
                             """
                         }
                     }
@@ -127,7 +132,7 @@ pipeline {
 
     post {
         always {
-            echo "Wiping build environment runner cache..."
+            echo "Wiping build workspace..."
             cleanWs()
         }
     }
