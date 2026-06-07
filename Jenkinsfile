@@ -10,8 +10,8 @@ pipeline {
         string(name: 'NEXUS_REPOSITORY', defaultValue: 'maven-releases', description: 'Nexus hosted repository name')
         string(name: 'MAVEN_GROUP_ID', defaultValue: 'com/example', description: 'Maven group path')
 
-        string(name: 'DEPLOY_EC2_IP', defaultValue: '13.234.29.22', description: 'Target EC2 IP')
-        string(name: 'DEPLOY_EC2_USER', defaultValue: 'ubuntu', description: 'SSH username')
+        string(name: 'DEPLOY_EC2_IP', defaultValue: '15.206.123.133', description: 'Target EC2 IP')
+        string(name: 'DEPLOY_EC2_USER', defaultValue: 'ec2-user', description: 'SSH username')
         string(name: 'APP_DEPLOY_DIR', defaultValue: '/opt/sample-app', description: 'Deployment directory')
     }
 
@@ -90,11 +90,9 @@ pipeline {
             }
         }
 
-
         stage('Deploy on EC2') {
             steps {
                 sshagent(credentials: ["${env.EC2_SSH_KEY_ID}"]) {
-
                     withCredentials([
                         usernamePassword(
                             credentialsId: "${env.NEXUS_CREDS_ID}",
@@ -102,9 +100,7 @@ pipeline {
                             passwordVariable: 'NEXUS_PASS'
                         )
                     ]) {
-
                         script {
-
                             def artifactName = "${JOB_NAME}"
                             def artifactVersion = "${BUILD_NUMBER}"
                             def artifactFile = "${artifactName}.war"
@@ -114,7 +110,7 @@ pipeline {
                             echo "Stage 5: Deploying artifact on EC2..."
 
                             sh """
-                                ssh -o StrictHostKeyChecking=no ${params.DEPLOY_EC2_USER}@${params.DEPLOY_EC2_IP} "
+                                ssh -A -o StrictHostKeyChecking=no ${params.DEPLOY_EC2_USER}@${params.DEPLOY_EC2_IP} "
                                     echo 'Connected to target EC2'
                                     hostname
 
@@ -124,7 +120,7 @@ pipeline {
                                     echo 'Downloading WAR from Nexus...'
 
                                     curl -f \
-                                    -u \$NEXUS_USER:\$NEXUS_PASS \
+                                    -u '\$NEXUS_USER:\$NEXUS_PASS' \
                                     -o ${params.APP_DEPLOY_DIR}/${artifactFile} \
                                     '${nexusDownloadUrl}'
 
@@ -137,7 +133,6 @@ pipeline {
             }
         }
     }
-
 
     post {
         always {
