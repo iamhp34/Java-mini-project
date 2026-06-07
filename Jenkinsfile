@@ -90,9 +90,11 @@ pipeline {
             }
         }
 
-        stage('Deploy on EC2 Machine') {
+
+        stage('Deploy on EC2') {
             steps {
                 sshagent(credentials: ["${env.EC2_SSH_KEY_ID}"]) {
+
                     withCredentials([
                         usernamePassword(
                             credentialsId: "${env.NEXUS_CREDS_ID}",
@@ -100,28 +102,34 @@ pipeline {
                             passwordVariable: 'NEXUS_PASS'
                         )
                     ]) {
+
                         script {
+
                             def artifactName = "${JOB_NAME}"
                             def artifactVersion = "${BUILD_NUMBER}"
+                            def artifactFile = "${artifactName}.war"
 
                             def nexusDownloadUrl = "http://${params.NEXUS_IP_PORT}/repository/${params.NEXUS_REPOSITORY}/${params.MAVEN_GROUP_ID}/${artifactName}/${artifactVersion}/${artifactName}-${artifactVersion}.war"
 
-                            echo "Stage 5: Deploying artifact on EC2: ${params.DEPLOY_EC2_IP}..."
+                            echo "Stage 5: Deploying artifact on EC2..."
 
                             sh """
-                                ssh -o StrictHostKeyChecking=no ${params.DEPLOY_EC2_USER}@${params.DEPLOY_EC2_IP} '
-                                    echo "Connected to target EC2"
+                                ssh -o StrictHostKeyChecking=no ${params.DEPLOY_EC2_USER}@${params.DEPLOY_EC2_IP} "
+                                    echo 'Connected to target EC2'
                                     hostname
 
-                                    echo "Creating deployment directory..."
                                     sudo mkdir -p ${params.APP_DEPLOY_DIR}
                                     sudo chown -R ${params.DEPLOY_EC2_USER}:${params.DEPLOY_EC2_USER} ${params.APP_DEPLOY_DIR}
 
-                                    echo "Downloading WAR file from Nexus..."
-                                    curl -f -u \$NEXUS_USER:\$NEXUS_PASS -o ${params.APP_DEPLOY_DIR}/${artifactName}.war "${nexusDownloadUrl}"
+                                    echo 'Downloading WAR from Nexus...'
 
-                                    echo "Deployment completed successfully."
-                                '
+                                    curl -f \
+                                    -u \$NEXUS_USER:\$NEXUS_PASS \
+                                    -o ${params.APP_DEPLOY_DIR}/${artifactFile} \
+                                    '${nexusDownloadUrl}'
+
+                                    echo 'Deployment complete.'
+                                "
                             """
                         }
                     }
@@ -129,6 +137,7 @@ pipeline {
             }
         }
     }
+
 
     post {
         always {
